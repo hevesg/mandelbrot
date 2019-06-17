@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mandelbrot set inspector</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<script src="point.js"></script>
+<script src="rectangle.js"></script>
+<script src="complex-number.js"></script>
+<script src="mandelbrot.js"></script>
+<script>
+
+    var canvas = document.getElementById('canvas'),
+        ctx = canvas.getContext('2d'),
+        focus = new Rectange(-3, -1.5, 3, 3),
+        inProgress = false,
+        displayedValue = [],
+        step,
+        zoom = 1,
+        maxStep = 32,
+        imgData,
+        mandelbrotSet,
+        maxSetItems,
+        timer = 0,
+        currentPoint = new MandelbrotItem(0, 0, 0, 0);
+
+    resizeCanvas();
+    onEnterFrame();
+
+    window.addEventListener('resize', resizeCanvas, false);
+
+    canvas.addEventListener('mousemove', displayInfo);
+
+    canvas.addEventListener('click', onClick);
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        var ratio = canvas.width / canvas.height;
+        focus = new Rectange(
+            focus.x,
+            focus.y,
+            focus.height * ratio,
+            focus.height
+        );
+        reset();
+    }
+
+    function onClick(e) {
+        if (e.shiftKey) {
+            setZoom(2);
+            changeFocus(e.x, e.y);
+        } else if (e.altKey) {
+            setZoom(0.5);
+            changeFocus(e.x, e.y);
+        }
+    }
+
+    function setZoom(mult) {
+        zoom *= mult;
+        maxStep = Math.floor(zoom * 16);
+        if (maxStep > 255) {
+            maxStep = 255;
+        }
+        if (maxStep < 1) {
+            maxStep = 1;
+        }
+    }
+
+    function displayInfo(e) {
+        var target = e.target,
+            s = 0;
+        displayedValue = [];
+        currentPoint = new MandelbrotItem(e.x, e.y,
+            e.x / target.width * focus.width + focus.x,
+            e.y / target.height * focus.height + focus.y
+        );
+        while (currentPoint.isPartOfSet() && s < maxStep) {
+            displayedValue.push(new Point(currentPoint.current.a, currentPoint.current.b))
+            currentPoint.nextCurrent();
+            s++;
+        }
+    }
+
+    function changeFocus(x, y) {
+        x = x / imgData.width * focus.width + focus.x - focus.width / (2 * zoom);
+        y = y / imgData.height * focus.height + focus.y - focus.height / (2 * zoom);
+        var w = focus.width / zoom;
+        var h = focus.height / zoom;
+        focus = new Rectange(x, y, w, h);
+        reset();
+    }
+
+    function onEnterFrame () {
+        window.requestAnimationFrame(onEnterFrame);
+        drawSet();
+        drawValues();
+        if (step < maxStep) {
+            mandelbrotSet.forEach(function (item) {
+                item.nextCurrent();
+            });
+            mandelbrotSet = mandelbrotSet.filter(function(item) { return item.isPartOfSet()});
+            step++;
+        } else {
+            inProgress = false;
+        }
+        timer++;
+    }
+
+    function reset() {
+        inProgress = true;
+        displayedValue = [];
+        imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        mandelbrotSet = getInitialMandelbrotSet();
+        maxSetItems = mandelbrotSet.length;
+        step = 0;
+    }
+
+    function drawSet() {
+        mandelbrotSet.forEach(function(item) {
+            var pixel = (item.position.x + item.position.y * canvas.width) * 4;
+            var color = Math.floor(step * ( 255 / maxStep ));
+            imgData.data[pixel] = color;
+            imgData.data[pixel + 1] = color;
+            imgData.data[pixel + 2] = color;
+            imgData.data[pixel + 3] = 255;
+        });
+        ctx.putImageData(imgData, 0, 0);
+    }
+
+    function drawValues() {
+        if (!inProgress) {
+            drawCoordinates();
+        }
+        if (inProgress) {
+
+        }
+        progressBar(20, imgData.height - 40, imgData.width - 40, 10, step, maxStep);
+        progressBar(20, imgData.height - 25, imgData.width - 40, 10, mandelbrotSet.length, maxSetItems);
+        if (displayedValue && !inProgress) {
+            infoBar(20, imgData.height - (imgData.width / 3 + 5), imgData.width / 3 - 40, imgData.width / 3 - 40);
+        }
+    }
+
+    function drawCoordinates() {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, currentPoint.position.y - 1, canvas.width, 3);
+        ctx.fillRect(currentPoint.position.x - 1, 0, 3, canvas.height);
+
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, currentPoint.position.y, canvas.width, 1);
+        ctx.fillRect(currentPoint.position.x, 0, 1, canvas.height);
+
+        ctx.fillStyle = "black";
+        ctx.fillRect(canvas.width - 150, currentPoint.position.y + 1, 150, 20);
+        ctx.fillRect(currentPoint.position.x - 151, 0, 150, 20);
+
+        ctx.fillStyle = "white";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "top";
+        ctx.fillText(currentPoint.initial.b, canvas.width, currentPoint.position.y + 6);
+        ctx.fillText(currentPoint.initial.a, currentPoint.position.x, 6);
+    }
+
+    function progressBar(x, y, w, h, c, m) {
+        ctx.translate(x, y);
+        ctx.strokeStyle = "white";
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeRect(0, 0, w, h);
+
+        ctx.fillStyle = "white";
+        ctx.fillRect(2, 2, (c / m) * (w - 4), h -4);
+        ctx.translate(-x, -y);
+    }
+
+    function infoBar(x, y, w, h) {
+        ctx.translate(x, y);
+        ctx.strokeStyle = "black";
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeRect(0, 0, w, h);
+
+        ctx.translate(w / 2, h / 2);
+
+        ctx.moveTo(-w/2, 0);
+        ctx.lineTo(w/2, 0);
+        ctx.stroke();
+
+        ctx.moveTo(0, -h/2);
+        ctx.lineTo(0, h/2);
+        ctx.stroke();
+
+        ctx.strokeStyle = "red";
+        displayedValue.forEach(function(point) {
+
+            ctx.beginPath();
+            ctx.arc(
+                point.x / 4 * w,
+                point.y / 4 * h,
+                1, 0, 2 * Math.PI
+            );
+            ctx.stroke();
+        });
+
+        ctx.translate(-x - w / 2, -y - h / 2);
+    }
+
+    function getInitialMandelbrotSet() {
+        var array = [];
+        for (var y = 0; y < canvas.height; y++) {
+            for (var x = 0; x < canvas.width; x++) {
+                var a = x * focus.width /canvas.width + focus.x,
+                    b = y * focus.height / canvas.height + focus.y;
+                array.push(new MandelbrotItem(
+                    x, y, a, b
+                ));
+            }
+        }
+        return array;
+    }
+
+</script>
+
+</body>
+</html>
